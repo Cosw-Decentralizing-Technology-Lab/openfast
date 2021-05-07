@@ -806,7 +806,7 @@ SUBROUTINE AD14_InputSolve_NoIfW( p_FAST, u_AD14, y_ED, MeshMapData, ErrStat, Er
 END SUBROUTINE AD14_InputSolve_NoIfW
 !----------------------------------------------------------------------------------------------------------------------------------
 !> This routine sets the inputs required for ServoDyn
-SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, MeshMapData, ErrStat, ErrMsg )
+SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, u_AD14, m_AD14, MeshMapData, n_t_global, ErrStat, ErrMsg )
 !..................................................................................................................................
 
    TYPE(FAST_ParameterType),         INTENT(IN)     :: p_FAST       !< Glue-code simulation parameters
@@ -816,13 +816,25 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, M
    TYPE(InflowWind_OutputType),      INTENT(IN)     :: y_IfW        !< InflowWind outputs
    TYPE(OpFM_OutputType),            INTENT(IN)     :: y_OpFM       !< OpenFOAM outputs
    TYPE(BD_OutputType),              INTENT(IN)     :: y_BD(:)      !< BD Outputs
+   TYPE(AD14_InputType),             INTENT(IN)     :: u_AD14       !< AeroDyn14 inputs at t.?
+   TYPE(AD14_MiscVarType),           INTENT(IN)     :: m_AD14       !< AeroDyn14 misc at t.?
    TYPE(FAST_ModuleMapType),         INTENT(INOUT)  :: MeshMapData  !< Data for mapping between modules
+   INTEGER(IntKi),                   INTENT(IN)     :: n_t_global   !< current time step
    INTEGER(IntKi),                   INTENT(  OUT)  :: ErrStat      !< Error status
    CHARACTER(*),                     INTENT(  OUT)  :: ErrMsg       !< Error message
-!  TYPE(AD_OutputType),              INTENT(IN)     :: y_AD         !< AeroDyn outputs
 
-   INTEGER(IntKi)                                   :: k            ! blade loop counter
-   
+      ! local variables
+   INTEGER(IntKi)                                   :: k                        ! blade loop counter
+   REAL(ReKi)                                       :: fd = 0.0                 ! Flow deflection (radian)
+   REAL(ReKi)                                       :: aa = 0.0                 ! Assembly angle (radian)
+   REAL(ReKi)                                       :: aa_pivot(10)             ! Pivot samples for assembly angle.
+   REAL(ReKi), PARAMETER                            :: aa_mean = 0.0            ! Mean value for assembly angle's normal distritbution sampling.
+   REAL(ReKi), PARAMETER                            :: aa_sigma = 0.19634       ! (PI / 16) Standard deviation value for assembly angle's normal distritbution sampling.
+   INTEGER(IntKi)                                   :: aa_n_iter                ! Number of iteration for assembly angle value assigning.
+   INTEGER(IntKi)                                   :: aa_n_residual            ! Number of residual for assembly angle value assigning.
+   REAL(ReKi)                                       :: tmpVector(3)
+   REAL(ReKi)                                       :: rLocal
+
    INTEGER(IntKi)                                   :: ErrStat2                 ! temporary Error status of the operation
    CHARACTER(ErrMsgLen)                             :: ErrMsg2                  ! temporary Error message if ErrStat /= ErrID_None
    CHARACTER(*), PARAMETER                          :: RoutineName = 'SrvD_InputSolve' 
@@ -837,13 +849,11 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, M
    IF ( p_FAST%CompInflow == Module_IfW )  THEN 
 
       u_SrvD%WindDir  = ATAN2( y_IfW%VelocityUVW(2,1), y_IfW%VelocityUVW(1,1) )
-      u_SrvD%YawErr   = u_SrvD%WindDir - y_ED%YawAngle
       u_SrvD%HorWindV = SQRT( y_IfW%VelocityUVW(1,1)**2 + y_IfW%VelocityUVW(2,1)**2 )
 
    ELSEIF ( p_FAST%CompInflow == Module_OpFM )  THEN 
       
       u_SrvD%WindDir  = ATAN2( y_OpFM%v(1), y_OpFM%u(1) )
-      u_SrvD%YawErr   = u_SrvD%WindDir - y_ED%YawAngle
       u_SrvD%HorWindV = SQRT( y_OpFM%u(1)**2 + y_OpFM%v(1)**2 )
       
       if ( allocated(u_SrvD%SuperController) ) then
@@ -857,14 +867,68 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, M
 
    ENDIF
 
-   
+      ! gutomitai: Wind vane simulation including assembly angle and flow deflection.
+      ! Get assembly angle values.
+   IF ( m_FAST%t_global == 0.0 ) THEN
 
-      
+         ! Get pivot samples for assembly angle.
+      SampleNormalDist(aa_mean, aa_sigma, aa_pivot)
+
+         ! Get full samples for assembly angle. ?
+      IF ( .NOT. ALLOCATED(u_SrvD%AssAngs) ) THEN
+           aa_n_iter = INT(p_FAST%n_TMax_m1 / SIZE(aa_pivot))
+              IF (aa_n_iter == 0) THEN
+                 CALL SetErrStat(ErrID_Fatal, "Error: can't get the number of iteration for the assembly angle array.", ErrStat, ErrMsg, RoutineName)
+                 RETURN
+              END IF
+
+           aa_n_residual = p_FAST%n_TMax_m1 - aa_n_iter * SIZE(aa_pivot)
+
+           ALLOCATE(u_SrvD%AssAngs(p_FAST%n_TMax_ml), STAT = ErrStat2)
+              IF (ErrStat2 /= 0) THEN
+                 CALL SetErrStat(ErrID_Fatal, "Error: allocating the assembly angle array for normal distribution sampling", ErrStat, ErrMsg, RoutineName)
+                 RETURN
+              END IF
+
+           DO i=1,SIZE(aa_pivot)
+              DO j=1,aa_n_iter
+                 u_SrvD%AssAngs((i-1)*aa_n_iter + j) = aa_pivot(i)
+              END DO
+           END DO
+
+           IF ( .NOT. aa_n_residual ) THEN
+              DO i=1,aa_n_residual
+                 u_SrvD%AssAngs(SIZE(aa_pivot)*aa_n_iter + i) = aa_pivot(10)
+              END DO
+           END IF
+      END IF
+   END IF
+
+      ! calculate flow deflection.
+      tmpVector = u_AD14%InputMarkers(IBlade)%Position(:,1) - u_AD14%TurbineComponents%Hub%Position(:)
+      rLocal = SQRT( DOT_PRODUCT( tmpVector, u_AD14%TurbineComponents%Hub%Orientation(2,:) )**2  &
+                        + DOT_PRODUCT( tmpVector, u_AD14%TurbineComponents%Hub%Orientation(3,:) )**2 )
+
+   IF ( u_SrvD%HorWindV /= 0.0 .AND. COS(u_SrvD%WindDir - y_ED%YawAngle) /= 0.0 ) THEN
+       DO IBlade = 1,p%NumBl
+          fd = fd + ATAN2(2.0 * m_AD14%Element%AP(1, IBLADE) * y_ED%RotSpeed * rLocal &
+                            , u_SrvD%HorWindV * COS(u_SrvD%WindDir - y_ED%YawAngle) * (1.0 - m_AD14%Element%A(1, IBLADE)) )
+       END DO
+
+       fd = 0.5 * fd / p%NumBl ! flow deflection average.
+   END IF
+
       ! ServoDyn inputs from combination of InflowWind and ElastoDyn
-
    u_SrvD%YawAngle  = y_ED%YawAngle !nacelle yaw plus platform yaw
-   u_SrvD%YawErr    = u_SrvD%WindDir - u_SrvD%YawAngle ! the nacelle yaw error estimate (positive about zi-axis)
 
+   IF ( n_t_global < 1 ) THEN
+      aa = 0.0
+   ELSE
+      aa = u_SrvD%AssAngs(n_t_global)
+   END IF
+
+   !u_SrvD%YawErr    = u_SrvD%WindDir - u_SrvD%YawAngle ! the nacelle yaw error estimate (positive about zi-axis)
+   u_SrvD%YawErr    = u_SrvD%WindDir - u_SrvD%YawAngle + aa + fd
 
       ! ServoDyn inputs from ElastoDyn
    u_SrvD%Yaw       = y_ED%Yaw  !nacelle yaw
@@ -934,6 +998,63 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, M
       
                         
 END SUBROUTINE SrvD_InputSolve
+!----------------------------------------------------------------------------------------------------------------------------------
+!> gutomitai: This routine random-samples a normal distribution according to the Box-Muller method.
+SUBROUTINE SampleNormalDist( Mean, Sigma, Samples )
+!..................................................................................................................................
+
+   IMPLICIT NONE
+
+   REAL(ReKi),                        INTENT(IN)     :: Mean             ! Mean
+   REAL(ReKi),                        INTENT(IN)     :: Sigma            ! Standard deviation
+   REAL(ReKi),                     INTENT(INOUT)     :: Samples(:)    ! Samples
+
+   ! local variables
+   INTEGER(IntKi)                                    :: numSamples
+   REAL(ReKi), ALLOCATABLE, DIMENSION(:)             :: u1
+   REAL(ReKi), ALLOCATABLE, DIMENSION(:)             :: u2
+   REAL(ReKi), ALLOCATABLE, DIMENSION(:)             :: z0
+   REAL(ReKi), ALLOCATABLE, DIMENSION(:)             :: z1
+   REAL(ReKi)                                        :: r
+   REAL(ReKi)                                        :: theta
+   REAL(ReKi), PARAMETER                             :: eps = 1e-7
+   REAL(ReKi), PARAMETER                             :: pi = 3.14159
+
+   INTEGER(IntKi)                                   :: ErrStat2                 ! temporary Error status of the operation
+   CHARACTER(ErrMsgLen)                             :: ErrMsg2                  ! temporary Error message if ErrStat /= ErrID_None
+   CHARACTER(*), PARAMETER                          :: RoutineName = 'SampleNormalDist'
+
+   ! Sample u1, u2 from uniform distribution [0.0, 1.0].
+   numSamples = Size(Samples)
+   ALLOCATE(u1(Size(numSamples)), u1(Size(NumSamples)), z0(Size(numSamples)), z1(Size(NumSamples)), STAT = ErrStat2)
+      IF (ErrStat2 /= 0) THEN
+         CALL SetErrStat(ErrID_Fatal, "Error: allocating arrays for normal distribution sampling", ErrStat, ErrMsg, RoutineName)
+         RETURN
+      END IF
+
+   RANDOM_NUMBER(u1)
+   RANDOM_NUMBER(u2)
+
+   ! Convert uniform distribution to standard normal distribution.
+   DO i=1, numSamples
+      r = SQRT(-2.0 * LOG(u1 + eps))
+      theta = 2.0 * pi * u2
+      z0(i) = r * COS(theta)
+      z1(i) = r * SIN(theta)
+   END DO
+
+   ! Get normal distribution samples.
+   DO i=1, numSamples
+      Samples(i) = Mean + Sigma * z0(i)
+   END DO
+
+   DEALLOCATE(u1, u2, z0, z1, STAT = ErrStat2)
+      IF (ErrStat2 /= 0) THEN
+         CALL SetErrStat(ErrID_Fatal, "Error: deallocating arrays for normal distribution sampling", ErrStat, ErrMsg, RoutineName)
+         RETURN
+      END IF
+
+END SUBROUTINE SampleNormalDist
 !----------------------------------------------------------------------------------------------------------------------------------
 !> This routine sets the inputs required for ServoDyn from an external source (Simulink)
 SUBROUTINE SrvD_SetExternalInputs( p_FAST, m_FAST, u_SrvD )
@@ -4637,7 +4758,7 @@ SUBROUTINE CalcOutputs_And_SolveForInputs( n_t_global, this_time, this_state, ca
    
    
    IF ( p_FAST%CompServo == Module_SrvD  ) THEN         
-      CALL SrvD_InputSolve( p_FAST, m_FAST, SrvD%Input(1), ED%y, IfW%y, OpFM%y, BD%y, MeshmapData, ErrStat2, ErrMsg2 )
+      CALL SrvD_InputSolve( p_FAST, m_FAST, SrvD%Input(1), ED%y, IfW%y, OpFM%y, BD%y, AD14%u, AD14%m, MeshmapData, ErrStat2, ErrMsg2 )
       CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )  
    END IF         
              

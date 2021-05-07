@@ -158,7 +158,7 @@ TIME_STEP_LOOP:  DO n_t_global = Restart_step, Turbine(1)%p_FAST%n_TMax_m1
       if ( Turbine(i_turb)%p_FAST%CalcSteady .and. .not. Turbine(i_turb)%m_FAST%Lin%FoundSteady) then
          CALL CheckError( ErrID_Fatal, "Unable to find steady-state solution." )
       end if
-  END DO
+   END DO
   
    !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
    !  Write simulation times and stop
