@@ -696,7 +696,6 @@ SUBROUTINE AD14_InputSolve_NoIfW( p_FAST, u_AD14, y_ED, MeshMapData, ErrStat, Er
    NumBl    = SIZE(u_AD14%InputMarkers,1)
    BldNodes = u_AD14%InputMarkers(1)%Nnodes
    
-               
    !-------------------------------------------------------------------------------------------------
    ! Blade positions, orientations, and velocities:
    !-------------------------------------------------------------------------------------------------
@@ -806,7 +805,7 @@ SUBROUTINE AD14_InputSolve_NoIfW( p_FAST, u_AD14, y_ED, MeshMapData, ErrStat, Er
 END SUBROUTINE AD14_InputSolve_NoIfW
 !----------------------------------------------------------------------------------------------------------------------------------
 !> This routine sets the inputs required for ServoDyn
-SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, u_AD14, m_AD14, MeshMapData, n_t_global, ErrStat, ErrMsg )
+SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, AD14, MeshMapData, n_t_global, ErrStat, ErrMsg )
 !..................................................................................................................................
 
    TYPE(FAST_ParameterType),         INTENT(IN)     :: p_FAST       !< Glue-code simulation parameters
@@ -816,14 +815,15 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, u
    TYPE(InflowWind_OutputType),      INTENT(IN)     :: y_IfW        !< InflowWind outputs
    TYPE(OpFM_OutputType),            INTENT(IN)     :: y_OpFM       !< OpenFOAM outputs
    TYPE(BD_OutputType),              INTENT(IN)     :: y_BD(:)      !< BD Outputs
-   TYPE(AD14_InputType),             INTENT(IN)     :: u_AD14       !< AeroDyn14 inputs at t.?
-   TYPE(AD14_MiscVarType),           INTENT(IN)     :: m_AD14       !< AeroDyn14 misc at t.?
+   TYPE(AeroDyn14_Data),             INTENT(IN)     :: AD14         !< AeroDyn14 data
    TYPE(FAST_ModuleMapType),         INTENT(INOUT)  :: MeshMapData  !< Data for mapping between modules
    INTEGER(IntKi),                   INTENT(IN)     :: n_t_global   !< current time step
    INTEGER(IntKi),                   INTENT(  OUT)  :: ErrStat      !< Error status
    CHARACTER(*),                     INTENT(  OUT)  :: ErrMsg       !< Error message
 
       ! local variables
+   INTEGER(IntKi)                                   :: i            ! loop counter
+   INTEGER(IntKi)                                   :: j            ! loop counter
    INTEGER(IntKi)                                   :: k                        ! blade loop counter
    REAL(ReKi)                                       :: fd = 0.0                 ! Flow deflection (radian)
    REAL(ReKi)                                       :: aa = 0.0                 ! Assembly angle (radian)
@@ -872,7 +872,8 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, u
    IF ( m_FAST%t_global == 0.0 ) THEN
 
          ! Get pivot samples for assembly angle.
-      SampleNormalDist(aa_mean, aa_sigma, aa_pivot)
+      CALL SampleNormalDist(aa_mean, aa_sigma, aa_pivot, ErrStat2, ErrMsg2)
+         Call SetErrStat(ErrStat2,ErrMsg2,ErrStat,ErrMsg,RoutineName)
 
          ! Get full samples for assembly angle. ?
       IF ( .NOT. ALLOCATED(u_SrvD%AssAngs) ) THEN
@@ -884,7 +885,7 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, u
 
            aa_n_residual = p_FAST%n_TMax_m1 - aa_n_iter * SIZE(aa_pivot)
 
-           ALLOCATE(u_SrvD%AssAngs(p_FAST%n_TMax_ml), STAT = ErrStat2)
+           ALLOCATE(u_SrvD%AssAngs(p_FAST%n_TMax_m1), STAT = ErrStat2)
               IF (ErrStat2 /= 0) THEN
                  CALL SetErrStat(ErrID_Fatal, "Error: allocating the assembly angle array for normal distribution sampling", ErrStat, ErrMsg, RoutineName)
                  RETURN
@@ -896,7 +897,7 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, u
               END DO
            END DO
 
-           IF ( .NOT. aa_n_residual ) THEN
+           IF ( aa_n_residual /= 0 ) THEN
               DO i=1,aa_n_residual
                  u_SrvD%AssAngs(SIZE(aa_pivot)*aa_n_iter + i) = aa_pivot(10)
               END DO
@@ -905,17 +906,17 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, u
    END IF
 
       ! calculate flow deflection.
-      tmpVector = u_AD14%InputMarkers(IBlade)%Position(:,1) - u_AD14%TurbineComponents%Hub%Position(:)
-      rLocal = SQRT( DOT_PRODUCT( tmpVector, u_AD14%TurbineComponents%Hub%Orientation(2,:) )**2  &
-                        + DOT_PRODUCT( tmpVector, u_AD14%TurbineComponents%Hub%Orientation(3,:) )**2 )
+      tmpVector = AD14%u%InputMarkers(1)%Position(:,1) - AD14%u%TurbineComponents%Hub%Position(:)
+      rLocal = SQRT( DOT_PRODUCT( tmpVector, AD14%u%TurbineComponents%Hub%Orientation(2,:) )**2  &
+                        + DOT_PRODUCT( tmpVector, AD14%u%TurbineComponents%Hub%Orientation(3,:) )**2 )
 
    IF ( u_SrvD%HorWindV /= 0.0 .AND. COS(u_SrvD%WindDir - y_ED%YawAngle) /= 0.0 ) THEN
-       DO IBlade = 1,p%NumBl
-          fd = fd + ATAN2(2.0 * m_AD14%Element%AP(1, IBLADE) * y_ED%RotSpeed * rLocal &
-                            , u_SrvD%HorWindV * COS(u_SrvD%WindDir - y_ED%YawAngle) * (1.0 - m_AD14%Element%A(1, IBLADE)) )
+       DO k = 1,AD14%p%NumBl
+          fd = fd + ATAN2(2.0 * AD14%m%Element%AP(1, k) * y_ED%RotSpeed * rLocal &
+                            , u_SrvD%HorWindV * COS(u_SrvD%WindDir - y_ED%YawAngle) * (1.0 - AD14%m%Element%A(1, k)) )
        END DO
 
-       fd = 0.5 * fd / p%NumBl ! flow deflection average.
+       fd = 0.5 * fd / AD14%p%NumBl ! flow deflection average.
    END IF
 
       ! ServoDyn inputs from combination of InflowWind and ElastoDyn
@@ -1000,16 +1001,19 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, u
 END SUBROUTINE SrvD_InputSolve
 !----------------------------------------------------------------------------------------------------------------------------------
 !> gutomitai: This routine random-samples a normal distribution according to the Box-Muller method.
-SUBROUTINE SampleNormalDist( Mean, Sigma, Samples )
+SUBROUTINE SampleNormalDist( Mean, Sigma, Samples, ErrStat, ErrMsg )
 !..................................................................................................................................
 
    IMPLICIT NONE
 
-   REAL(ReKi),                        INTENT(IN)     :: Mean             ! Mean
-   REAL(ReKi),                        INTENT(IN)     :: Sigma            ! Standard deviation
-   REAL(ReKi),                     INTENT(INOUT)     :: Samples(:)    ! Samples
+   REAL(ReKi),                        INTENT(IN)     :: Mean                !< Mean
+   REAL(ReKi),                        INTENT(IN)     :: Sigma               !< Standard deviation
+   REAL(ReKi),                     INTENT(INOUT)     :: Samples(:)          !< Samples
+   INTEGER(IntKi),                   INTENT(  OUT)  :: ErrStat              !< Error status
+   CHARACTER(*),                     INTENT(  OUT)  :: ErrMsg               !< Error message
 
    ! local variables
+   INTEGER(IntKi)                                    :: i            ! loop counter
    INTEGER(IntKi)                                    :: numSamples
    REAL(ReKi), ALLOCATABLE, DIMENSION(:)             :: u1
    REAL(ReKi), ALLOCATABLE, DIMENSION(:)             :: u2
@@ -1026,19 +1030,19 @@ SUBROUTINE SampleNormalDist( Mean, Sigma, Samples )
 
    ! Sample u1, u2 from uniform distribution [0.0, 1.0].
    numSamples = Size(Samples)
-   ALLOCATE(u1(Size(numSamples)), u1(Size(NumSamples)), z0(Size(numSamples)), z1(Size(NumSamples)), STAT = ErrStat2)
+   ALLOCATE(u1(numSamples), u2(numSamples), z0(numSamples), z1(numSamples), STAT = ErrStat2)
       IF (ErrStat2 /= 0) THEN
          CALL SetErrStat(ErrID_Fatal, "Error: allocating arrays for normal distribution sampling", ErrStat, ErrMsg, RoutineName)
          RETURN
       END IF
 
-   RANDOM_NUMBER(u1)
-   RANDOM_NUMBER(u2)
+   CALL RANDOM_NUMBER(u1)
+   CALL RANDOM_NUMBER(u2)
 
    ! Convert uniform distribution to standard normal distribution.
    DO i=1, numSamples
-      r = SQRT(-2.0 * LOG(u1 + eps))
-      theta = 2.0 * pi * u2
+      r = SQRT(-2.0 * LOG(u1(i) + eps))
+      theta = 2.0 * pi * u2(i)
       z0(i) = r * COS(theta)
       z1(i) = r * SIN(theta)
    END DO
@@ -4694,7 +4698,7 @@ SUBROUTINE CalcOutputs_And_SolveForInputs( n_t_global, this_time, this_state, ca
 
 
       !> Solve option 2 (modules without direct feedthrough):
-   CALL SolveOption2(this_time, this_state, p_FAST, m_FAST, ED, BD, AD14, AD, SrvD, IfW, OpFM, MeshMapData, ErrStat2, ErrMsg2, n_t_global < 0, WriteThisStep)
+   CALL SolveOption2(n_t_global, this_time, this_state, p_FAST, m_FAST, ED, BD, AD14, AD, SrvD, IfW, OpFM, MeshMapData, ErrStat2, ErrMsg2, n_t_global < 0, WriteThisStep)
       CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )  
 
 #ifdef OUTPUT_MASS_MATRIX
@@ -4758,7 +4762,7 @@ SUBROUTINE CalcOutputs_And_SolveForInputs( n_t_global, this_time, this_state, ca
    
    
    IF ( p_FAST%CompServo == Module_SrvD  ) THEN         
-      CALL SrvD_InputSolve( p_FAST, m_FAST, SrvD%Input(1), ED%y, IfW%y, OpFM%y, BD%y, AD14%u, AD14%m, MeshmapData, ErrStat2, ErrMsg2 )
+      CALL SrvD_InputSolve( p_FAST, m_FAST, SrvD%Input(1), ED%y, IfW%y, OpFM%y, BD%y, AD14, MeshmapData, n_t_global, ErrStat2, ErrMsg2 )
       CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )  
    END IF         
              
@@ -5080,7 +5084,8 @@ SUBROUTINE SolveOption2b_Inp2IfW(this_time, this_state, p_FAST, m_FAST, ED, BD, 
 END SUBROUTINE SolveOption2b_Inp2IfW
 !----------------------------------------------------------------------------------------------------------------------------------
 !> This routine implements the first part of the "option 2" solve for inputs that apply to AeroDyn and ServoDyn.
-SUBROUTINE SolveOption2c_Inp2AD_SrvD(this_time, this_state, p_FAST, m_FAST, ED, BD, AD14, AD, SrvD, IfW, OpFM, MeshMapData, ErrStat, ErrMsg, WriteThisStep)
+SUBROUTINE SolveOption2c_Inp2AD_SrvD(n_t_global, this_time, this_state, p_FAST, m_FAST, ED, BD, AD14, AD, SrvD, IfW, OpFM, MeshMapData, ErrStat, ErrMsg, WriteThisStep)
+   INTEGER(IntKi)          , intent(in   ) :: n_t_global          !< current time step (used only for SrvD hack)
    REAL(DbKi)              , intent(in   ) :: this_time           !< The current simulation time (actual or time of prediction)
    INTEGER(IntKi)          , intent(in   ) :: this_state          !< Index into the state array (current or predicted states)
 
@@ -5146,7 +5151,7 @@ SUBROUTINE SolveOption2c_Inp2AD_SrvD(this_time, this_state, p_FAST, m_FAST, ED, 
    
    IF ( p_FAST%CompServo == Module_SrvD  ) THEN
 
-      CALL SrvD_InputSolve( p_FAST, m_FAST, SrvD%Input(1), ED%y, IfW%y, OpFM%y, BD%y, MeshMapData, ErrStat2, ErrMsg2 )
+      CALL SrvD_InputSolve( p_FAST, m_FAST, SrvD%Input(1), ED%y, IfW%y, OpFM%y, BD%y, AD14, MeshMapData, n_t_global, ErrStat2, ErrMsg2 )
          CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )
 
    END IF
@@ -5155,9 +5160,10 @@ END SUBROUTINE SolveOption2c_Inp2AD_SrvD
 !----------------------------------------------------------------------------------------------------------------------------------
 !> This routine implements the "option 2" solve for all inputs without direct links to HD, SD, MAP, or the ED platform reference 
 !! point.
-SUBROUTINE SolveOption2(this_time, this_state, p_FAST, m_FAST, ED, BD, AD14, AD, SrvD, IfW, OpFM, MeshMapData, ErrStat, ErrMsg, firstCall, WriteThisStep)
+SUBROUTINE SolveOption2(n_t_global, this_time, this_state, p_FAST, m_FAST, ED, BD, AD14, AD, SrvD, IfW, OpFM, MeshMapData, ErrStat, ErrMsg, firstCall, WriteThisStep)
 !...............................................................................................................................
    LOGICAL                 , intent(in   ) :: firstCall           !< flag to determine how to call ServoDyn (a hack)
+   INTEGER(IntKi)          , intent(in   ) :: n_t_global          !< current time step (used only for SrvD hack)
    REAL(DbKi)              , intent(in   ) :: this_time           !< The current simulation time (actual or time of prediction)
    INTEGER(IntKi)          , intent(in   ) :: this_state          !< Index into the state array (current or predicted states)
 
@@ -5202,7 +5208,7 @@ SUBROUTINE SolveOption2(this_time, this_state, p_FAST, m_FAST, ED, BD, AD14, AD,
       CALL SolveOption2b_Inp2IfW(this_time, this_state, p_FAST, m_FAST, ED, BD, AD14, AD, SrvD, IfW, OpFM, MeshMapData, ErrStat2, ErrMsg2, WriteThisStep)
          CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )
       ! call IfW's CalcOutput; transfer wind-inflow inputs to AD; compute all of SrvD inputs: 
-      CALL SolveOption2c_Inp2AD_SrvD(this_time, this_state, p_FAST, m_FAST, ED, BD, AD14, AD, SrvD, IfW, OpFM, MeshMapData, ErrStat2, ErrMsg2, WriteThisStep)
+      CALL SolveOption2c_Inp2AD_SrvD(n_t_global, this_time, this_state, p_FAST, m_FAST, ED, BD, AD14, AD, SrvD, IfW, OpFM, MeshMapData, ErrStat2, ErrMsg2, WriteThisStep)
          CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )
   ! ELSE ! these subroutines are called in the AdvanceStates routine before BD, IfW, AD, and SrvD states are updated. This gives a more accurate solution that would otherwise require a correction step.
    END IF
@@ -5387,7 +5393,7 @@ SUBROUTINE FAST_AdvanceStates( t_initial, n_t_global, p_FAST, m_FAST, ED, BD, Sr
    
    
       ! because AeroDyn DBEMT states depend heavily on getting inputs correct, we are overwriting its inputs with updated inflow outputs here
-   CALL SolveOption2c_Inp2AD_SrvD(t_global_next, STATE_PRED, p_FAST, m_FAST, ED, BD, AD14, AD, SrvD, IfW, OpFM, MeshMapData, ErrStat2, ErrMsg2, WriteThisStep)
+   CALL SolveOption2c_Inp2AD_SrvD(n_t_global, t_global_next, STATE_PRED, p_FAST, m_FAST, ED, BD, AD14, AD, SrvD, IfW, OpFM, MeshMapData, ErrStat2, ErrMsg2, WriteThisStep)
       CALL SetErrStat( ErrStat2, ErrMsg2, ErrStat, ErrMsg, RoutineName )
    
    ! AeroDyn: get predicted states
