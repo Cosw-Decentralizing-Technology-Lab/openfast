@@ -395,7 +395,6 @@ IMPLICIT NONE
     TYPE(TMD_InputType)  :: NTMD      !< TMD module inputs - nacelle [-]
     TYPE(TMD_InputType)  :: TTMD      !< TMD module inputs - tower [-]
     REAL(SiKi) , DIMENSION(:), ALLOCATABLE  :: SuperController      !< A swap array: used to pass input data to the DLL controller from the supercontroller [-]
-    REAL(ReKi) , DIMENSION(:), ALLOCATABLE  :: AssAngs !< Assembly angles' array for wind vane [radian].
   END TYPE SrvD_InputType
 ! =======================
 ! =========  SrvD_OutputType  =======

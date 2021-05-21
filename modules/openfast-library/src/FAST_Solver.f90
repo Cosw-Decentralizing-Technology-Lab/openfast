@@ -48,6 +48,8 @@ MODULE FAST_Solver
 
    IMPLICIT NONE
 
+   REAL(ReKi) , DIMENSION(:), ALLOCATABLE  :: AssAngs !< Assembly angles' array for wind vane [radian]. ?
+
 CONTAINS
 !----------------------------------------------------------------------------------------------------------------------------------
 !> This routine sets the inputs required for BD--using the Option 2 solve method; currently the only inputs solved in this routine
@@ -876,7 +878,7 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, A
          Call SetErrStat(ErrStat2,ErrMsg2,ErrStat,ErrMsg,RoutineName)
 
          ! Get full samples for assembly angle. ?
-      IF ( .NOT. ALLOCATED(u_SrvD%AssAngs) ) THEN
+      IF ( .NOT. ALLOCATED(AssAngs) ) THEN
            aa_n_iter = INT(p_FAST%n_TMax_m1 / SIZE(aa_pivot))
               IF (aa_n_iter == 0) THEN
                  CALL SetErrStat(ErrID_Fatal, "Error: can't get the number of iteration for the assembly angle array.", ErrStat, ErrMsg, RoutineName)
@@ -885,7 +887,7 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, A
 
            aa_n_residual = p_FAST%n_TMax_m1 - aa_n_iter * SIZE(aa_pivot)
 
-           ALLOCATE(u_SrvD%AssAngs(p_FAST%n_TMax_m1), STAT = ErrStat2)
+           ALLOCATE(AssAngs(p_FAST%n_TMax_m1), STAT = ErrStat2)
               IF (ErrStat2 /= 0) THEN
                  CALL SetErrStat(ErrID_Fatal, "Error: allocating the assembly angle array for normal distribution sampling", ErrStat, ErrMsg, RoutineName)
                  RETURN
@@ -893,22 +895,22 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, A
 
            DO i=1,SIZE(aa_pivot)
               DO j=1,aa_n_iter
-                 u_SrvD%AssAngs((i-1)*aa_n_iter + j) = aa_pivot(i)
+                 AssAngs((i-1)*aa_n_iter + j) = aa_pivot(i)
               END DO
            END DO
 
            IF ( aa_n_residual /= 0 ) THEN
               DO i=1,aa_n_residual
-                 u_SrvD%AssAngs(SIZE(aa_pivot)*aa_n_iter + i) = aa_pivot(10)
+                 AssAngs(SIZE(aa_pivot)*aa_n_iter + i) = aa_pivot(10)
               END DO
            END IF
       END IF
    END IF
 
       ! calculate flow deflection.
-      tmpVector = AD14%u%InputMarkers(1)%Position(:,1) - AD14%u%TurbineComponents%Hub%Position(:)
-      rLocal = SQRT( DOT_PRODUCT( tmpVector, AD14%u%TurbineComponents%Hub%Orientation(2,:) )**2  &
-                        + DOT_PRODUCT( tmpVector, AD14%u%TurbineComponents%Hub%Orientation(3,:) )**2 )
+   tmpVector = AD14%Input(1)%InputMarkers(1)%Position(:,1) - AD14%Input(1)%TurbineComponents%Hub%Position(:)
+   rLocal = SQRT( DOT_PRODUCT( tmpVector, AD14%Input(1)%TurbineComponents%Hub%Orientation(2,:) )**2  &
+                        + DOT_PRODUCT( tmpVector, AD14%Input(1)%TurbineComponents%Hub%Orientation(3,:) )**2 )
 
    IF ( u_SrvD%HorWindV /= 0.0 .AND. COS(u_SrvD%WindDir - y_ED%YawAngle) /= 0.0 ) THEN
        DO k = 1,AD14%p%NumBl
@@ -925,7 +927,7 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, A
    IF ( n_t_global < 1 ) THEN
       aa = 0.0
    ELSE
-      aa = u_SrvD%AssAngs(n_t_global)
+      aa = AssAngs(n_t_global)
    END IF
 
    !u_SrvD%YawErr    = u_SrvD%WindDir - u_SrvD%YawAngle ! the nacelle yaw error estimate (positive about zi-axis)
