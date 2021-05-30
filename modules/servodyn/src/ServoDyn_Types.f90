@@ -395,6 +395,7 @@ IMPLICIT NONE
     TYPE(TMD_InputType)  :: NTMD      !< TMD module inputs - nacelle [-]
     TYPE(TMD_InputType)  :: TTMD      !< TMD module inputs - tower [-]
     REAL(SiKi) , DIMENSION(:), ALLOCATABLE  :: SuperController      !< A swap array: used to pass input data to the DLL controller from the supercontroller [-]
+    REAL(ReKi) , DIMENSION(:), ALLOCATABLE  :: AssAngs !< Assembly angles' array for wind vane [radian]. ?
   END TYPE SrvD_InputType
 ! =======================
 ! =========  SrvD_OutputType  =======
@@ -6442,6 +6443,9 @@ ENDIF
   CALL TMD_DestroyInput( InputData%TTMD, ErrStat, ErrMsg )
 IF (ALLOCATED(InputData%SuperController)) THEN
   DEALLOCATE(InputData%SuperController)
+ENDIF
+IF (ALLOCATED(InputData%AssAngs)) THEN
+  DEALLOCATE(InputData%AssAngs)
 ENDIF
  END SUBROUTINE SrvD_DestroyInput
 

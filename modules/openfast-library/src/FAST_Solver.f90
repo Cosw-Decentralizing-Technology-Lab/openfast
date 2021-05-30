@@ -45,10 +45,7 @@ MODULE FAST_Solver
    USE SuperController
    Use ExtPtfm_MCKF
    
-
    IMPLICIT NONE
-
-   REAL(ReKi) , DIMENSION(:), ALLOCATABLE  :: AssAngs !< Assembly angles' array for wind vane [radian]. ?
 
 CONTAINS
 !----------------------------------------------------------------------------------------------------------------------------------
@@ -871,41 +868,40 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, A
 
       ! gutomitai: Wind vane simulation including assembly angle and flow deflection.
       ! Get assembly angle values.
-   IF ( m_FAST%t_global == 0.0 ) THEN
+
+      ! Get full samples for assembly angle. ?
+  IF ( .NOT. ALLOCATED(u_SrvD%AssAngs) ) THEN
 
          ! Get pivot samples for assembly angle.
       CALL SampleNormalDist(aa_mean, aa_sigma, aa_pivot, ErrStat2, ErrMsg2)
          Call SetErrStat(ErrStat2,ErrMsg2,ErrStat,ErrMsg,RoutineName)
 
-         ! Get full samples for assembly angle. ?
-      IF ( .NOT. ALLOCATED(AssAngs) ) THEN
-           aa_n_iter = INT(p_FAST%n_TMax_m1 / SIZE(aa_pivot))
-              IF (aa_n_iter == 0) THEN
-                 CALL SetErrStat(ErrID_Fatal, "Error: can't get the number of iteration for the assembly angle array.", ErrStat, ErrMsg, RoutineName)
-                 RETURN
-              END IF
+      aa_n_iter = INT(p_FAST%n_TMax_m1 / SIZE(aa_pivot))
+         IF (aa_n_iter == 0) THEN
+            CALL SetErrStat(ErrID_Fatal, "Error: can't get the number of iteration for the assembly angle array.", ErrStat, ErrMsg, RoutineName)
+            RETURN
+         END IF
 
-           aa_n_residual = p_FAST%n_TMax_m1 - aa_n_iter * SIZE(aa_pivot)
+      aa_n_residual = p_FAST%n_TMax_m1 - aa_n_iter * SIZE(aa_pivot)
 
-           ALLOCATE(AssAngs(p_FAST%n_TMax_m1), STAT = ErrStat2)
-              IF (ErrStat2 /= 0) THEN
-                 CALL SetErrStat(ErrID_Fatal, "Error: allocating the assembly angle array for normal distribution sampling", ErrStat, ErrMsg, RoutineName)
-                 RETURN
-              END IF
+      ALLOCATE(u_SrvD%AssAngs(p_FAST%n_TMax_m1), STAT = ErrStat2)
+         IF (ErrStat2 /= 0) THEN
+            CALL SetErrStat(ErrID_Fatal, "Error: allocating the assembly angle array for normal distribution sampling", ErrStat, ErrMsg, RoutineName)
+            RETURN
+         END IF
 
-           DO i=1,SIZE(aa_pivot)
-              DO j=1,aa_n_iter
-                 AssAngs((i-1)*aa_n_iter + j) = aa_pivot(i)
-              END DO
-           END DO
+      DO i=1,SIZE(aa_pivot)
+         DO j=1,aa_n_iter
+            u_SrvD%AssAngs((i-1)*aa_n_iter + j) = aa_pivot(i)
+         END DO
+      END DO
 
-           IF ( aa_n_residual /= 0 ) THEN
-              DO i=1,aa_n_residual
-                 AssAngs(SIZE(aa_pivot)*aa_n_iter + i) = aa_pivot(10)
-              END DO
-           END IF
+      IF ( aa_n_residual /= 0 ) THEN
+         DO i=1,aa_n_residual
+            u_SrvD%AssAngs(SIZE(aa_pivot)*aa_n_iter + i) = aa_pivot(10)
+         END DO
       END IF
-   END IF
+  END IF
 
       ! calculate flow deflection.
    tmpVector = AD14%Input(1)%InputMarkers(1)%Position(:,1) - AD14%Input(1)%TurbineComponents%Hub%Position(:)
@@ -927,7 +923,7 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, A
    IF ( n_t_global < 1 ) THEN
       aa = 0.0
    ELSE
-      aa = AssAngs(n_t_global)
+      aa = u_SrvD%AssAngs(n_t_global)
    END IF
 
    !u_SrvD%YawErr    = u_SrvD%WindDir - u_SrvD%YawAngle ! the nacelle yaw error estimate (positive about zi-axis)
@@ -1027,8 +1023,11 @@ SUBROUTINE SampleNormalDist( Mean, Sigma, Samples, ErrStat, ErrMsg )
    REAL(ReKi), PARAMETER                             :: pi = 3.14159
 
    INTEGER(IntKi)                                   :: ErrStat2                 ! temporary Error status of the operation
-   CHARACTER(ErrMsgLen)                             :: ErrMsg2                  ! temporary Error message if ErrStat /= ErrID_None
    CHARACTER(*), PARAMETER                          :: RoutineName = 'SampleNormalDist'
+
+
+   ErrStat = ErrID_None
+   ErrMsg  = ""
 
    ! Sample u1, u2 from uniform distribution [0.0, 1.0].
    numSamples = Size(Samples)
