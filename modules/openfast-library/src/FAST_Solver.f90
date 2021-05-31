@@ -927,11 +927,11 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, A
    END IF
 
    !u_SrvD%YawErr    = u_SrvD%WindDir - u_SrvD%YawAngle ! the nacelle yaw error estimate (positive about zi-axis)
-   u_SrvD%YawErr    = u_SrvD%WindDir - u_SrvD%YawAngle + aa + fd
+   u_SrvD%YawErr    = u_SrvD%WindDir - u_SrvD%YawAngle + aa + fd ! [rad].
 
       ! ServoDyn inputs from ElastoDyn
-   u_SrvD%Yaw       = y_ED%Yaw  !nacelle yaw
-   u_SrvD%YawRate   = y_ED%YawRate
+   u_SrvD%Yaw       = y_ED%Yaw  !nacelle yaw, [rad].
+   u_SrvD%YawRate   = y_ED%YawRate ! [rad/s].
    u_SrvD%BlPitch   = y_ED%BlPitch
    u_SrvD%LSS_Spd   = y_ED%LSS_Spd
    u_SrvD%HSS_Spd   = y_ED%HSS_Spd
