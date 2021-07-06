@@ -73,11 +73,11 @@ MODULE BladedInterface
 #ifdef STATIC_DLL_LOAD   
    INTERFACE
    
-#ifdef LOAD_SUPERCONTROLLER   
-      SUBROUTINE DISCON ( avrSWAP, from_SC, to_SC, aviFAIL, accINFILE, avcOUTNAME, avcMSG )  BIND(C, NAME='DISCON')
-#else      
+!#ifdef LOAD_SUPERCONTROLLER
+!      SUBROUTINE DISCON ( avrSWAP, from_SC, to_SC, aviFAIL, accINFILE, avcOUTNAME, avcMSG )  BIND(C, NAME='DISCON')
+!#else
       SUBROUTINE DISCON ( avrSWAP,                 aviFAIL, accINFILE, avcOUTNAME, avcMSG )  BIND(C, NAME='DISCON')
-#endif      
+!#endif
 
          USE, INTRINSIC :: ISO_C_Binding
          

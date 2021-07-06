@@ -908,10 +908,10 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, A
    rLocal = SQRT( DOT_PRODUCT( tmpVector, AD14%Input(1)%TurbineComponents%Hub%Orientation(2,:) )**2  &
                         + DOT_PRODUCT( tmpVector, AD14%Input(1)%TurbineComponents%Hub%Orientation(3,:) )**2 )
 
-   IF ( u_SrvD%HorWindV /= 0.0 .AND. COS(u_SrvD%WindDir - y_ED%YawAngle) /= 0.0 ) THEN
+   IF ( u_SrvD%HorWindV /= 0.0 ) THEN
        DO k = 1,AD14%p%NumBl
-          fd = fd + ATAN2(2.0 * AD14%m%Element%AP(1, k) * y_ED%RotSpeed * rLocal &
-                            , u_SrvD%HorWindV * COS(u_SrvD%WindDir - y_ED%YawAngle) * (1.0 - AD14%m%Element%A(1, k)) )
+          fd = fd + ATAN2(2.0 * AD14%m%Element%AP(4, k) * y_ED%RotSpeed * rLocal &
+                            , u_SrvD%HorWindV * (1.0 - AD14%m%Element%A(4, k)) )
        END DO
 
        fd = 0.5 * fd / AD14%p%NumBl ! flow deflection average.
@@ -927,7 +927,10 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, A
    END IF
 
    !u_SrvD%YawErr    = u_SrvD%WindDir - u_SrvD%YawAngle ! the nacelle yaw error estimate (positive about zi-axis)
-   u_SrvD%YawErr    = u_SrvD%WindDir - u_SrvD%YawAngle + aa + fd ! [rad].
+
+   u_SrvD%FlowDef   = fd
+   u_SrvD%AssAng    = aa
+   u_SrvD%YawErr    = u_SrvD%WindDir - u_SrvD%YawAngle + u_SrvD%FlowDef + u_SrvD%AssAng ! [rad].
 
       ! ServoDyn inputs from ElastoDyn
    u_SrvD%Yaw       = y_ED%Yaw  !nacelle yaw, [rad].

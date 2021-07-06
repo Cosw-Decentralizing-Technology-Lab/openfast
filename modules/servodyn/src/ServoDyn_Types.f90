@@ -373,6 +373,9 @@ IMPLICIT NONE
     REAL(ReKi)  :: ExternalHSSBrFrac      !< Fraction of full braking torque: 0 (off) <= HSSBrFrac <= 1 (full) from Simulink or LabVIEW [-]
     REAL(ReKi)  :: TwrAccel      !< Tower acceleration for tower feedback control (user routine only) [m/s^2]
     REAL(ReKi)  :: YawErr      !< Yaw error [radians]
+    REAL(ReKi)  :: FlowDef      !< Flow deflection [radians]
+    REAL(ReKi) , DIMENSION(:), ALLOCATABLE  :: AssAngs !< Assembly angles' array for wind vane [radians].
+    REAL(ReKi)  :: AssAng      !< Assembly angle for wind vane [radians].
     REAL(ReKi)  :: WindDir      !< Wind direction [radians]
     REAL(ReKi) , DIMENSION(1:3)  :: RootMyc      !< Out-of-plane moment (i.e., the moment caused by out-of-plane forces) at the blade root for each of the blades (max 3) [N-m]
     REAL(ReKi)  :: YawBrTAxp      !< Tower-top / yaw bearing fore-aft (translational) acceleration (absolute) [m/s^2]
@@ -395,7 +398,6 @@ IMPLICIT NONE
     TYPE(TMD_InputType)  :: NTMD      !< TMD module inputs - nacelle [-]
     TYPE(TMD_InputType)  :: TTMD      !< TMD module inputs - tower [-]
     REAL(SiKi) , DIMENSION(:), ALLOCATABLE  :: SuperController      !< A swap array: used to pass input data to the DLL controller from the supercontroller [-]
-    REAL(ReKi) , DIMENSION(:), ALLOCATABLE  :: AssAngs !< Assembly angles' array for wind vane [radian]. ?
   END TYPE SrvD_InputType
 ! =======================
 ! =========  SrvD_OutputType  =======
