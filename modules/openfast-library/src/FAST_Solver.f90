@@ -824,8 +824,8 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, A
    INTEGER(IntKi)                                   :: i            ! loop counter
    INTEGER(IntKi)                                   :: j            ! loop counter
    INTEGER(IntKi)                                   :: k                        ! blade loop counter
-   REAL(ReKi)                                       :: fd = 0.0                 ! Flow deflection (radian)
-   REAL(ReKi)                                       :: aa = 0.0                 ! Assembly angle (radian)
+   REAL(ReKi)                                       :: fd                 ! Flow deflection (radian)
+   REAL(ReKi)                                       :: aa                 ! Assembly angle (radian)
    REAL(ReKi)                                       :: aa_pivot(10)             ! Pivot samples for assembly angle.
    REAL(ReKi), PARAMETER                            :: aa_mean = 0.0            ! Mean value for assembly angle's normal distritbution sampling.
    REAL(ReKi), PARAMETER                            :: aa_sigma = 0.19634       ! (PI / 16) Standard deviation value for assembly angle's normal distritbution sampling.
@@ -841,6 +841,8 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, A
    
    ErrStat = ErrID_None
    ErrMsg  = ""
+   fd = 0.0
+   aa = 0.0
 
       ! Calculate horizontal hub-height wind direction (positive about zi-axis); these are
       !   zero if there is no wind input when InflowWind is not used:
@@ -911,10 +913,10 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, A
    IF ( u_SrvD%HorWindV /= 0.0 ) THEN
        DO k = 1,AD14%p%NumBl
           fd = fd + ATAN2(2.0 * AD14%m%Element%AP(4, k) * y_ED%RotSpeed * rLocal &
-                            , u_SrvD%HorWindV * (1.0 - AD14%m%Element%A(4, k)) )
+                            , u_SrvD%HorWindV * COS(u_SrvD%WindDir - y_ED%YawAngle) * (1.0 - AD14%m%Element%A(4, k)) )
        END DO
 
-       fd = 0.5 * fd / AD14%p%NumBl ! flow deflection average.
+       fd = fd / AD14%p%NumBl - 0.1819 ! flow deflection average - constant flow deflection.
    END IF
 
       ! ServoDyn inputs from combination of InflowWind and ElastoDyn
@@ -933,7 +935,7 @@ SUBROUTINE SrvD_InputSolve( p_FAST, m_FAST, u_SrvD, y_ED, y_IfW, y_OpFM, y_BD, A
    u_SrvD%YawErr    = u_SrvD%WindDir - u_SrvD%YawAngle + u_SrvD%FlowDef + u_SrvD%AssAng ! [rad].
 
       ! ServoDyn inputs from ElastoDyn
-   u_SrvD%Yaw       = y_ED%Yaw  !nacelle yaw, [rad].
+   u_SrvD%Yaw       = y_ED%Yaw  !nacelle yaw, [rad] ?.
    u_SrvD%YawRate   = y_ED%YawRate ! [rad/s].
    u_SrvD%BlPitch   = y_ED%BlPitch
    u_SrvD%LSS_Spd   = y_ED%LSS_Spd
